@@ -53,6 +53,7 @@ static const uint8_t WIFI_FAIL_BIT      = BIT1;
 
 static EventGroupHandle_t wifi_event_group;
 static bool wifi_first_start = true;
+static esp_netif_obj* wifi_sta_netif = nullptr;
 
 static int s_retry_num = 0;
 
@@ -109,7 +110,7 @@ NetworkClient::joinAP(const char * ssid, const char * pass)
   ESP_ERROR_CHECK(esp_netif_init());
 
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  esp_netif_create_default_wifi_sta();
+  wifi_sta_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -180,14 +181,7 @@ void
 NetworkClient::disconnect()
 {
   if (connected) {
-    
-    ESP_ERROR_CHECK(esp_event_handler_unregister(ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, &sta_event_handler));
-    ESP_ERROR_CHECK(esp_event_loop_delete_default());
-
-    vEventGroupDelete(wifi_event_group);
-
-    esp_wifi_disconnect();
-
+    forceDisconnect();
     connected = false;
   }
 }
@@ -286,4 +280,21 @@ NetworkClient::downloadFile(const char * url, int32_t * defaultLen)
   *defaultLen = buffer_size;
 
   return buffer;
+}
+
+void NetworkClient::forceDisconnect() {
+    esp_err_t err;
+
+    err = esp_event_handler_unregister(ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, &sta_event_handler);
+    if (err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+
+    err = esp_event_loop_delete_default();
+    if (err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+
+    esp_netif_destroy_default_wifi(wifi_sta_netif);
+
+    vEventGroupDelete(wifi_event_group);
+
+    esp_wifi_disconnect();
+    esp_wifi_restore();
 }
